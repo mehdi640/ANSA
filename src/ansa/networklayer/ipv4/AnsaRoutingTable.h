@@ -28,15 +28,9 @@
 #include "InterfaceTableAccess.h"
 #include "NotificationBoard.h"
 
-/**
- * AnsaRouteVector represents multicast table. It is list of AnsaMulticast routes.
- */
-typedef std::vector<AnsaIPv4MulticastRoute *> routeVector;
-
 class INET_API AnsaRoutingTable : public RoutingTable {
 
     protected:
-        routeVector multicastRoutes;                        /**< Multicast routing table based on AnsaIPv4MulticastRoute which is inherited from IPv4MulticastRoute. */
         std::vector<std::string> showMRoute;                /**< Output of multicast routing table, same as Cisco mroute. */
 
     protected:
@@ -46,7 +40,7 @@ class INET_API AnsaRoutingTable : public RoutingTable {
 
     public:
       AnsaRoutingTable(){};
-      virtual ~AnsaRoutingTable();
+      virtual ~AnsaRoutingTable(){};
 
     public:
 
@@ -81,13 +75,8 @@ class INET_API AnsaRoutingTable : public RoutingTable {
       virtual std::vector<AnsaIPv4MulticastRoute*> getRoutesForSource(IPv4Address source);
       void generateShowIPMroute();
 
-      int getNumRoutes() const;
-      virtual AnsaIPv4MulticastRoute *getMulticastRoute(int k) const;
-
-      virtual void addMulticastRoute(const AnsaIPv4MulticastRoute *entry);
-      virtual bool deleteMulticastRoute(const AnsaIPv4MulticastRoute *entry);
-
-      virtual bool isMulticastForwardingEnabled() { return multicastForward; }
+      virtual void addMulticastRoute(AnsaIPv4MulticastRoute *entry);
+      virtual bool deleteMulticastRoute(AnsaIPv4MulticastRoute *entry);
 
       virtual bool isLocalAddress(const IPv4Address& dest) const;
       virtual InterfaceEntry *getInterfaceByAddress(const IPv4Address& addr) const;

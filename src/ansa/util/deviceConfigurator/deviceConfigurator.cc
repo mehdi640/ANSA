@@ -481,7 +481,7 @@ void DeviceConfigurator::loadInterfaceConfig(cXMLElement* iface)
             route->setNetmask(ie->ipv4Data()->getNetmask());
             route->setGateway(IPv4Address());
             route->setMetric(ie->ipv4Data()->getMetric());
-            route->setAdminDist(ANSAIPv4Route::dDirectlyConnected);
+            route->setAdminDist(IPv4Route::dDirectlyConnected);
             route->setInterface(ie);
 
             ANSArt->addRoute(route);
@@ -548,7 +548,7 @@ void DeviceConfigurator::loadStaticRouting(cXMLElement* route)
         }
 
         ANSAStaticRoute->setSource(IPv4Route::MANUAL);
-        ANSAStaticRoute->setAdminDist(ANSAIPv4Route::dDirectlyConnected);
+        ANSAStaticRoute->setAdminDist(IPv4Route::dDirectlyConnected);
 
         //To the ANSA RoutingTable add ANSAIPv4Route, to the inet RoutingTable add IPv4Route
         if (ANSArt != NULL)
@@ -599,7 +599,7 @@ void DeviceConfigurator::loadDefaultRouter(cXMLElement *gateway)
         defaultRoute->setGateway(nextHop);
         defaultRoute->setInterface(route->getInterface());
         defaultRoute->setMetric(0);
-        defaultRoute->setAdminDist(ANSAIPv4Route::dStatic);
+        defaultRoute->setAdminDist(IPv4Route::dStatic);
 
         rt->addRoute(defaultRoute);
     }

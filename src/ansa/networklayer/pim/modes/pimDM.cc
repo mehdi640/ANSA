@@ -20,12 +20,16 @@
  * @details Implementation according to RFC3973.
  */
 
+#include "IPv4Datagram.h"
 #include "pimDM.h"
 
 
 Define_Module(pimDM);
 
 using namespace std;
+
+typedef IPv4MulticastRoute::OutInterface OutInterface;
+typedef AnsaIPv4MulticastRoute::AnsaOutInterface AnsaOutInterface;
 
 /**
  * SEND PIM JOIN PRUNE
@@ -310,26 +314,25 @@ void pimDM::processGraftPacket(IPv4Address source, IPv4Address group, IPv4Addres
 	}
 
 	// find outgoing interface to neighbor
-	AnsaIPv4MulticastRoute::InterfaceVector outInt = route->getOutInt();
-	for (unsigned int l = 0; l < outInt.size(); l++)
+	for (unsigned int l = 0; l < route->getNumOutInterfaces(); l++)
 	{
-		if(outInt[l].intId == intId)
+	    AnsaOutInterface *outInt = route->getAnsaOutInterface(l);
+		if(outInt->intId == intId)
 		{
 			forward = true;
-			if (outInt[l].forwarding == AnsaIPv4MulticastRoute::Pruned)
+			if (outInt->forwarding == AnsaIPv4MulticastRoute::Pruned)
 			{
-				EV << "Interface " << outInt[l].intId << " transit to forwarding state (Graft)." << endl;
-				outInt[l].forwarding = AnsaIPv4MulticastRoute::Forward;
+				EV << "Interface " << outInt->intId << " transit to forwarding state (Graft)." << endl;
+				outInt->forwarding = AnsaIPv4MulticastRoute::Forward;
 
 				//cancel Prune Timer
-				PIMpt* timer = outInt[l].pruneTimer;
+				PIMpt* timer = outInt->pruneTimer;
 				cancelEvent(timer);
 				delete timer;
-				outInt[l].pruneTimer = NULL;
+				outInt->pruneTimer = NULL;
 			}
 		}
 	}
-	route->setOutInt(outInt);
 
 	// if all route was pruned, remove prune flag
 	// if upstrem is not source, send Graft message
@@ -387,18 +390,19 @@ void pimDM::processGraftAckPacket(AnsaIPv4MulticastRoute *route)
 void pimDM::processPrunePacket(AnsaIPv4MulticastRoute *route, int intId, int holdTime)
 {
 	EV << "pimDM::processPrunePacket" << endl;
-	AnsaIPv4MulticastRoute::InterfaceVector outInt = route->getOutInt();
 	int i = route->getOutIdByIntId(intId);
 	bool change = false;
 
 	// we find correct outgoing interface
-	if (i < (int) outInt.size())
+	if (i < (int) route->getNumOutInterfaces())
 	{
+	    AnsaOutInterface *outInt = route->getAnsaOutInterface(i);
+
 		// if interface was already pruned, restart Prune Timer
-		if (outInt[i].forwarding == AnsaIPv4MulticastRoute::Pruned)
+		if (outInt->forwarding == AnsaIPv4MulticastRoute::Pruned)
 		{
 			EV << "Outgoing interface is already pruned, restart Prune Timer." << endl;
-			PIMpt* timer = outInt[i].pruneTimer;
+			PIMpt* timer = outInt->pruneTimer;
 			cancelEvent(timer);
 			scheduleAt(simTime() + holdTime, timer);
 		}
@@ -406,13 +410,12 @@ void pimDM::processPrunePacket(AnsaIPv4MulticastRoute *route, int intId, int hol
 		else
 		{
 			EV << "Outgoing interfaces is forwarding now -> change to Pruned." << endl;
-			outInt[i].forwarding = AnsaIPv4MulticastRoute::Pruned;
+			outInt->forwarding = AnsaIPv4MulticastRoute::Pruned;
 			PIMpt* timer = createPruneTimer(route->getOrigin(), route->getMulticastGroup(), intId, holdTime);
-			outInt[i].pruneTimer = timer;
+			outInt->pruneTimer = timer;
 			change = true;
 		}
 	}
-	route->setOutInt(outInt);
 
 	// if there is no forwarding outgoing int, transit route to pruned state
 	if (route->isOilistNull() && change)
@@ -550,7 +553,6 @@ void pimDM::processStateRefreshPacket(PIMStateRefresh *pkt)
 		delete pkt;
 		return;
 	}
-	AnsaIPv4MulticastRoute::InterfaceVector outInt = route->getOutInt();
 	bool pruneIndicator;
 
 	// chceck if State Refresh msg has came to RPF interface
@@ -577,22 +579,23 @@ void pimDM::processStateRefreshPacket(PIMStateRefresh *pkt)
 	}
 
 	// go through all outgoing interfaces, reser Prune Timer and send out State Refresh msg
-	for (unsigned int i = 0; i < outInt.size(); i++)
+	for (unsigned int i = 0; i < route->getNumOutInterfaces(); i++)
 	{
-		if (outInt[i].forwarding == AnsaIPv4MulticastRoute::Pruned)
+	    AnsaOutInterface *outInt = route->getAnsaOutInterface(i);
+		if (outInt->forwarding == AnsaIPv4MulticastRoute::Pruned)
 		{
 			// P = true
 			pruneIndicator = true;
 			// reset PT
-			cancelEvent(outInt[i].pruneTimer);
-			scheduleAt(simTime() + PT, outInt[i].pruneTimer);
+			cancelEvent(outInt->pruneTimer);
+			scheduleAt(simTime() + PT, outInt->pruneTimer);
 		}
-		else if (outInt[i].forwarding == AnsaIPv4MulticastRoute::Forward)
+		else if (outInt->forwarding == AnsaIPv4MulticastRoute::Forward)
 		{
 			// P = false
 			pruneIndicator = false;
 		}
-		sendPimStateRefresh(pkt->getOriginatorAddress(), pkt->getSourceAddress(), pkt->getGroupAddress(), outInt[i].intId, pruneIndicator);
+		sendPimStateRefresh(pkt->getOriginatorAddress(), pkt->getSourceAddress(), pkt->getGroupAddress(), outInt->intId, pruneIndicator);
 	}
 	delete pkt;
 }
@@ -628,13 +631,12 @@ void pimDM::processPruneTimer(PIMpt *timer)
 
 	// state of interface is changed to forwarding
 	int i = route->getOutIdByIntId(intId);
-	AnsaIPv4MulticastRoute::InterfaceVector outInt = route->getOutInt();
-	if (i < (int) outInt.size())
+	if (i < (int) route->getNumOutInterfaces())
 	{
 		delete timer;
-		outInt[i].pruneTimer = NULL;
-		outInt[i].forwarding = AnsaIPv4MulticastRoute::Forward;
-		route->setOutInt(outInt);
+		AnsaOutInterface *outInt = route->getAnsaOutInterface(i);
+		outInt->pruneTimer = NULL;
+		outInt->forwarding = AnsaIPv4MulticastRoute::Forward;
 		route->removeFlag(AnsaIPv4MulticastRoute::P);
 
 		// if the router is pruned from multicast tree, join again
@@ -709,24 +711,24 @@ void pimDM::processStateRefreshTimer(PIMsrt * timer)
 {
 	EV << "pimDM::processStateRefreshTimer" << endl;
 	AnsaIPv4MulticastRoute *route = rt->getRouteFor(timer->getGroup(), timer->getSource());
-	AnsaIPv4MulticastRoute::InterfaceVector outInt = route->getOutInt();
 	bool pruneIndicator;
 
-	for (unsigned int i = 0; i < outInt.size(); i++)
+	for (unsigned int i = 0; i < route->getNumOutInterfaces(); i++)
 	{
-		if (outInt[i].forwarding == AnsaIPv4MulticastRoute::Pruned)
+	    AnsaOutInterface *outInt = route->getAnsaOutInterface(i);
+		if (outInt->forwarding == AnsaIPv4MulticastRoute::Pruned)
 		{
 			// P = true
 			pruneIndicator = true;
 			// reset PT
-			cancelEvent(outInt[i].pruneTimer);
-			scheduleAt(simTime() + PT, outInt[i].pruneTimer);
+			cancelEvent(outInt->pruneTimer);
+			scheduleAt(simTime() + PT, outInt->pruneTimer);
 		}
-		else if (outInt[i].forwarding == AnsaIPv4MulticastRoute::Forward)
+		else if (outInt->forwarding == AnsaIPv4MulticastRoute::Forward)
 		{
 			pruneIndicator = false;
 		}
-		int intId = outInt[i].intId;
+		int intId = outInt->intId;
 		sendPimStateRefresh(ift->getInterfaceById(intId)->ipv4Data()->getIPAddress(), timer->getSource(), timer->getGroup(), intId, pruneIndicator);
 	}
 	delete timer;
@@ -894,7 +896,6 @@ void pimDM::initialize(int stage)
 		nb->subscribe(this, NF_IPv4_NEW_MULTICAST_DENSE);
 		nb->subscribe(this, NF_IPv4_NEW_IGMP_ADDED);
 		nb->subscribe(this, NF_IPv4_NEW_IGMP_REMOVED);
-		nb->subscribe(this, NF_IPv4_DATA_ON_PRUNED_INT);
 		nb->subscribe(this, NF_IPv4_DATA_ON_NONRPF);
 		nb->subscribe(this, NF_IPv4_DATA_ON_RPF);
 		//nb->subscribe(this, NF_IPv4_RPF_CHANGE);
@@ -925,7 +926,9 @@ void pimDM::receiveChangeNotification(int category, const cPolymorphic *details)
 
 	Enter_Method_Silent();
 	printNotificationBanner(category, details);
-	IPv4ControlInfo *ctrl;
+	IPv4Datagram *datagram;
+	InterfaceEntry *ie;
+	PimInterface *pimInterface;
 	AnsaIPv4MulticastRoute *route;
 	addRemoveAddr *members;
 
@@ -958,24 +961,21 @@ void pimDM::receiveChangeNotification(int category, const cPolymorphic *details)
 			oldMulticastAddr(members);
 			break;
 
-		case NF_IPv4_DATA_ON_PRUNED_INT:
-			EV << "pimDM::receiveChangeNotification - Data appears on pruned interface." << endl;
-			ctrl = (IPv4ControlInfo *)(details);
-			dataOnPruned(ctrl->getDestAddr(), ctrl->getSrcAddr());
-			break;
-
 		// data come to non-RPF interface
 		case NF_IPv4_DATA_ON_NONRPF:
 			EV << "pimDM::receiveChangeNotification - Data appears on non-RPF interface." << endl;
-			ctrl = (IPv4ControlInfo *)(details);
-			dataOnNonRpf(ctrl->getDestAddr(), ctrl->getSrcAddr(), ctrl->getInterfaceId());
+			datagram = check_and_cast<IPv4Datagram*>(details);
+		    pimInterface = getIncomingInterface(datagram);
+			dataOnNonRpf(datagram->getDestAddress(), datagram->getSrcAddress(), pimInterface? pimInterface->getInterfaceID():-1);
 			break;
 
 		// data come to RPF interface
 		case NF_IPv4_DATA_ON_RPF:
 			EV << "pimDM::receiveChangeNotification - Data appears on RPF interface." << endl;
-			route = (AnsaIPv4MulticastRoute *)(details);
-			dataOnRpf(route);
+			datagram = check_and_cast<IPv4Datagram*>(details);
+			pimInterface = getIncomingInterface(datagram);
+			if (pimInterface && pimInterface->getMode() == Dense)
+			    dataOnRpf(datagram);
 			break;
 
 		// RPF interface has changed
@@ -1038,7 +1038,8 @@ void pimDM::rpfIntChange(AnsaIPv4MulticastRoute *route)
 	EV << "New RPF int for group " << group << " source " << source << " is " << rpfId << endl;
 
 	// set new RPF
-	AnsaIPv4MulticastRoute::inInterface oldRpf = route->getInInt();
+	int oldRpfIntId = route->getInIntId();
+	InterfaceEntry *oldRpfInt = route->getInIntPtr();
 	route->setInInt(newRpf, rpfId, pimNbt->getNeighborsByIntID(rpfId)[0].getAddr());
 
 	// route was not pruned, join to the multicast tree again
@@ -1050,35 +1051,33 @@ void pimDM::rpfIntChange(AnsaIPv4MulticastRoute *route)
 	}
 
 	// find rpf int in outgoing imterfaces and delete it
-	AnsaIPv4MulticastRoute::InterfaceVector outInt = route->getOutInt();
-	for(unsigned int i = 0; i < outInt.size(); i++)
+	for(unsigned int i = 0; i < route->getNumOutInterfaces(); i++)
 	{
-		if (outInt[i].intId == rpfId)
+	    AnsaOutInterface *outInt = route->getAnsaOutInterface(i);
+		if (outInt->intId == rpfId)
 		{
-			if (outInt[i].pruneTimer != NULL)
+			if (outInt->pruneTimer != NULL)
 			{
-				cancelEvent(outInt[i].pruneTimer);
-				delete outInt[i].pruneTimer;
-				outInt[i].pruneTimer = NULL;
+				cancelEvent(outInt->pruneTimer);
+				delete outInt->pruneTimer;
+				outInt->pruneTimer = NULL;
 			}
-			outInt.erase(outInt.begin() + i);
+			route->removeOutInterface(i);
 			break;
 		}
 	}
 
 	// old RPF should be now outgoing interface if it is not down
-	if (!oldRpf.intPtr->isDown())
+	if (oldRpfInt && !oldRpfInt->isDown())
 	{
-	    AnsaIPv4MulticastRoute::outInterface newOutInt;
-		newOutInt.intId = oldRpf.intId;
-		newOutInt.intPtr = oldRpf.intPtr;
-		newOutInt.pruneTimer = NULL;
-		newOutInt.forwarding = AnsaIPv4MulticastRoute::Forward;
-		newOutInt.mode = AnsaIPv4MulticastRoute::Densemode;
-		outInt.push_back(newOutInt);
+	    AnsaIPv4MulticastRoute::AnsaOutInterface *newOutInt = new AnsaOutInterface(oldRpfInt);
+		newOutInt->intId = oldRpfIntId;
+		newOutInt->pruneTimer = NULL;
+		newOutInt->forwarding = AnsaIPv4MulticastRoute::Forward;
+		newOutInt->mode = AnsaIPv4MulticastRoute::Densemode;
+		route->addOutInterface(newOutInt);
 	}
 
-	route->setOutInt(outInt);
 	rt->generateShowIPMroute();
 }
 
@@ -1092,10 +1091,17 @@ void pimDM::rpfIntChange(AnsaIPv4MulticastRoute *route)
  * @param newRoute Pointer to new entry in the multicast routing table.
  * @see PIMsat()
  */
-void pimDM::dataOnRpf(AnsaIPv4MulticastRoute *route)
+void pimDM::dataOnRpf(IPv4Datagram *datagram)
 {
+    AnsaIPv4MulticastRoute *route = rt->getRouteFor(datagram->getDestAddress(), datagram->getSrcAddress());
 	cancelEvent(route->getSat());
 	scheduleAt(simTime() + SAT, route->getSat());
+
+    if (route->getNumOutInterfaces() == 0 || route->isFlagSet(AnsaIPv4MulticastRoute::P))
+    {
+        EV << "Route does not have any outgoing interface or it is pruned." << endl;
+        dataOnPruned(datagram->getDestAddress(), datagram->getSrcAddress());
+    }
 }
 
 /**
@@ -1130,15 +1136,14 @@ void pimDM::dataOnNonRpf(IPv4Address group, IPv4Address source, int intId)
 
 		// find incoming interface
 		int i = route->getOutIdByIntId(intId);
-		AnsaIPv4MulticastRoute::InterfaceVector outInt = route->getOutInt();
 
 		// the incoming interface has to change its state to Pruned
-		if (outInt[i].forwarding == AnsaIPv4MulticastRoute::Forward)
+		AnsaOutInterface *outInt = route->getAnsaOutInterface(i);
+		if (outInt->forwarding == AnsaIPv4MulticastRoute::Forward)
 		{
-			outInt[i].forwarding = AnsaIPv4MulticastRoute::Pruned;
+			outInt->forwarding = AnsaIPv4MulticastRoute::Pruned;
 			PIMpt* timer = createPruneTimer(route->getOrigin(), route->getMulticastGroup(), intId, PT);
-			outInt[i].pruneTimer = timer;
-			route->setOutInt(outInt);
+			outInt->pruneTimer = timer;
 
 			// if there is no outgoing interface, Prune msg has to be sent on upstream
 			if (route->isOilistNull())
@@ -1169,7 +1174,10 @@ void pimDM::dataOnPruned(IPv4Address group, IPv4Address source)
 {
 	EV << "pimDM::dataOnPruned" << endl;
 	AnsaIPv4MulticastRoute *route = rt->getRouteFor(group, source);
-	// if GRT is running now, do not send Prune msg
+    if (route->isFlagSet(AnsaIPv4MulticastRoute::A))
+        return;
+
+    // if GRT is running now, do not send Prune msg
 	if (route->isFlagSet(AnsaIPv4MulticastRoute::P) && (route->getGrt() != NULL))
 	{
 		cancelEvent(route->getGrt());
@@ -1177,7 +1185,7 @@ void pimDM::dataOnPruned(IPv4Address group, IPv4Address source)
 		route->setGrt(NULL);
 	}
 	// otherwise send Prune msg to upstream router
-	else if (!route->isFlagSet(AnsaIPv4MulticastRoute::A))
+	else
 		sendPimJoinPrune(route->getInIntNextHop(), source, group, route->getInIntId());
 }
 
@@ -1213,24 +1221,26 @@ void pimDM::oldMulticastAddr(addRemoveAddr *members)
 		for (unsigned int j = 0; j < routes.size(); j++)
 		{
 			AnsaIPv4MulticastRoute *route = routes[j];
-			AnsaIPv4MulticastRoute::InterfaceVector outInt = route->getOutInt();
 			unsigned int k;
 
 			// is interface in list of outgoing interfaces?
-			for (k = 0; k < outInt.size(); k++)
+			for (k = 0; k < route->getNumOutInterfaces();)
 			{
-				if (outInt[k].intId == pimInt->getInterfaceID())
+			    AnsaOutInterface *outInt = route->getAnsaOutInterface(k);
+				if (outInt->intId == pimInt->getInterfaceID())
 				{
 					EV << "Interface is present, removing it from the list of outgoing interfaces." << endl;
-					outInt.erase(outInt.begin() + k);
+					route->removeOutInterface(k);
 				}
-				else if(outInt[k].forwarding == AnsaIPv4MulticastRoute::Forward)
+				else if(outInt->forwarding == AnsaIPv4MulticastRoute::Forward)
 				{
-					if ((pimNbt->getNeighborsByIntID(outInt[k].intId)).size() == 0)
+					if ((pimNbt->getNeighborsByIntID(outInt->intId)).size() == 0)
 						connected = true;
+					k++;
 				}
+				else
+				    k++;
 			}
-			route->setOutInt(outInt);
 
 			// if there is no directly connected member of group
 			if (!connected)
@@ -1294,7 +1304,7 @@ void pimDM::newMulticastAddr(addRemoveAddr *members)
 		for (unsigned int j = 0; j < routes.size(); j++)
 		{
 			AnsaIPv4MulticastRoute *route = routes[j];
-			AnsaIPv4MulticastRoute::InterfaceVector outInt = route->getOutInt();
+			//AnsaIPv4MulticastRoute::AnsaOutInterfaceVector outInt = route->getOutInt();
 			unsigned int k;
 
 			// check on RPF interface
@@ -1302,32 +1312,31 @@ void pimDM::newMulticastAddr(addRemoveAddr *members)
 				continue;
 
 			// is interface in list of outgoing interfaces?
-			for (k = 0; k < outInt.size(); k++)
+			for (k = 0; k < route->getNumOutInterfaces(); k++)
 			{
-				if (outInt[k].intId == pimInt->getInterfaceID())
+			    AnsaOutInterface *outInt = route->getAnsaOutInterface(k);
+				if (outInt->intId == pimInt->getInterfaceID())
 				{
 					EV << "Interface is already on list of outgoing interfaces" << endl;
-					if (outInt[k].forwarding == AnsaIPv4MulticastRoute::Pruned)
-						outInt[k].forwarding = AnsaIPv4MulticastRoute::Forward;
+					if (outInt->forwarding == AnsaIPv4MulticastRoute::Pruned)
+						outInt->forwarding = AnsaIPv4MulticastRoute::Forward;
 					forward = true;
 					break;
 				}
 			}
 
 			// interface is not in list of outgoing interfaces
-			if (k == outInt.size())
+			if (k == route->getNumOutInterfaces())
 			{
 				EV << "Interface is not on list of outgoing interfaces yet, it will be added" << endl;
-				AnsaIPv4MulticastRoute::outInterface newInt;
-				newInt.intPtr = pimInt->getInterfacePtr();
-				newInt.intId = pimInt->getInterfaceID();
-				newInt.mode = AnsaIPv4MulticastRoute::Densemode;
-				newInt.forwarding = AnsaIPv4MulticastRoute::Forward;
-				newInt.pruneTimer = NULL;
-				outInt.push_back(newInt);
+				AnsaIPv4MulticastRoute::AnsaOutInterface *newInt = new AnsaOutInterface(pimInt->getInterfacePtr());
+				newInt->intId = pimInt->getInterfaceID();
+				newInt->mode = AnsaIPv4MulticastRoute::Densemode;
+				newInt->forwarding = AnsaIPv4MulticastRoute::Forward;
+				newInt->pruneTimer = NULL;
+				route->addOutInterface(newInt);
 				forward = true;
 			}
-			route->setOutInt(outInt);
 			route->addFlag(AnsaIPv4MulticastRoute::C);
 
 			// route was pruned, has to be added to multicast tree
@@ -1381,35 +1390,34 @@ void pimDM::newMulticast(AnsaIPv4MulticastRoute *newRoute)
 			continue;
 
 		// create new outgoing interface
-		AnsaIPv4MulticastRoute::outInterface newOutInt;
-		newOutInt.intId = pimIntTemp->getInterfaceID();
-		newOutInt.intPtr = pimIntTemp->getInterfacePtr();
-		newOutInt.pruneTimer = NULL;
+		AnsaIPv4MulticastRoute::AnsaOutInterface *newOutInt = new AnsaOutInterface(pimIntTemp->getInterfacePtr());
+		newOutInt->intId = pimIntTemp->getInterfaceID();
+		newOutInt->pruneTimer = NULL;
 
 		switch (pimIntTemp->getMode())
 		{
 			case Dense:
-				newOutInt.mode = AnsaIPv4MulticastRoute::Densemode;
+				newOutInt->mode = AnsaIPv4MulticastRoute::Densemode;
 				break;
 			case Sparse:
-				newOutInt.mode = AnsaIPv4MulticastRoute::Sparsemode;
+				newOutInt->mode = AnsaIPv4MulticastRoute::Sparsemode;
 				break;
 		}
 
 		// if there are neighbors on interface, we will forward
 		if((pimNbt->getNeighborsByIntID(intId)).size() > 0)
 		{
-			newOutInt.forwarding = AnsaIPv4MulticastRoute::Forward;
+			newOutInt->forwarding = AnsaIPv4MulticastRoute::Forward;
 			pruned = false;
-			newRoute->addOutInt(newOutInt);
+			newRoute->addOutInterface(newOutInt);
 		}
 		// if there is member of group, we will forward
 		else if (pimIntTemp->isLocalIntMulticastAddress(newRoute->getMulticastGroup()))
 		{
-			newOutInt.forwarding = AnsaIPv4MulticastRoute::Forward;
+			newOutInt->forwarding = AnsaIPv4MulticastRoute::Forward;
 			pruned = false;
 			newRoute->addFlag(AnsaIPv4MulticastRoute::C);
-			newRoute->addOutInt(newOutInt);
+			newRoute->addOutInterface(newOutInt);
 		}
 		// in any other case interface is not involved
 	}
@@ -1431,10 +1439,7 @@ void pimDM::newMulticast(AnsaIPv4MulticastRoute *newRoute)
 		EV << "pimDM::newMulticast: There is no outgoing interface for multicast, send Prune msg to upstream" << endl;
 		newRoute->addFlag(AnsaIPv4MulticastRoute::P);
 
-		if (!newRoute->isFlagSet(AnsaIPv4MulticastRoute::A))
-			sendPimJoinPrune(newRoute->getInIntNextHop(), newRoute->getOrigin(), newRoute->getMulticastGroup(), newRoute->getInIntId());
-
-		// FIXME set timer which I do not use
+		// Prune message is sent from the forwarding hook (NF_IPv4_DATA_ON_RPF), see dataOnRpf()
 	}
 
 	// add new route record to multicast routing table
@@ -1442,3 +1447,14 @@ void pimDM::newMulticast(AnsaIPv4MulticastRoute *newRoute)
 	EV << "PimSplitter::newMulticast: New route was added to the multicast routing table." << endl;
 }
 
+PimInterface *pimDM::getIncomingInterface(IPv4Datagram *datagram)
+{
+    cGate *g = datagram->getArrivalGate();
+    if (g)
+    {
+        InterfaceEntry *ie = g ? ift->getInterfaceByNetworkLayerGateIndex(g->getIndex()) : NULL;
+        if (ie)
+            return pimIft->getInterfaceByIntID(ie->getInterfaceId());
+    }
+    return NULL;
+}

@@ -62,7 +62,7 @@ class pimDM : public cSimpleModule, protected INotifiable
 	    void oldMulticastAddr(addRemoveAddr *members);
 	    void dataOnPruned(IPv4Address destAddr, IPv4Address srcAddr);
 	    void dataOnNonRpf(IPv4Address group, IPv4Address source, int intId);
-	    void dataOnRpf(AnsaIPv4MulticastRoute *route);
+	    void dataOnRpf(IPv4Datagram *datagram);
 	    void rpfIntChange(AnsaIPv4MulticastRoute *route);
 
 	    // process timers
@@ -94,7 +94,7 @@ class pimDM : public cSimpleModule, protected INotifiable
 
 	    void setUpInterface();
 
-
+	    PimInterface *getIncomingInterface(IPv4Datagram *datagram);
 
 	protected:
 		virtual int numInitStages() const  {return 5;}

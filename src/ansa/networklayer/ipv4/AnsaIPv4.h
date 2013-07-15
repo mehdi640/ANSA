@@ -24,71 +24,31 @@
 #define __INET_ANSAIPV4_H
 
 #include "INETDefs.h"
-
-#include "QueueBase.h"
-#include "InterfaceTableAccess.h"
-#include "AnsaRoutingTable.h"
-#include "ICMPAccess.h"
-#include "IPv4ControlInfo.h"
 #include "IPv4Datagram.h"
-#include "IPv4FragBuf.h"
-#include "ProtocolMap.h"
-
-#ifdef WITH_MANET
-#include "ControlManetRouting_m.h"
-#endif
-
-#include "ICMPMessage_m.h"
-#include "IPv4InterfaceData.h"
-#include "ARPPacket_m.h"
 #include "IPv4.h"
-#include "PimSplitter.h"
-#include "AnsaInterfaceEntry.h"
-#include "AnsaRoutingTableAccess.h"
-#include "PimInterfaceTable.h"
-#include "PIMPacket_m.h"
-#include "pimSM.h"
-
-
-class ARPPacket;
-class ICMPMessage;
-
-enum AnsaIPProtocolId
-{
-    IP_PROT_PIM = 103
-};
 
 /**
- * @brief Class is extension of the IP protocol implementation for multicast.
- * @details It extends class IP mainly by methods processing multicast stream.
+ * @brief Class is extension of the IP protocol implementation for vrrpv2.
+ * @details It extends IPv4 routing decision with vforwarderId.
+ *
+ * It also contains some kludges for multicast routing:
+ *   - to add/remove multicast listeners when fake IGMP messages are received
+ *   - to refresh the string representation of the multicast routing table
  */
 class INET_API AnsaIPv4 : public IPv4
 {
-    private:
-        AnsaRoutingTable            *rt;
-        NotificationBoard           *nb;
-        PimInterfaceTable           *pimIft;        /**< Pointer to table of PIM interfaces. */
-
     protected:
         virtual void handlePacketFromNetwork(IPv4Datagram *datagram, InterfaceEntry *fromIE);
-        virtual void routeMulticastPacket(IPv4Datagram *datagram, InterfaceEntry *destIE, InterfaceEntry *fromIE);
-        virtual void routePimSM (AnsaIPv4MulticastRoute *route, AnsaIPv4MulticastRoute *routeG, IPv4Datagram *datagram, IPv4ControlInfo *ctrl);
-        virtual void routePimDM (AnsaIPv4MulticastRoute *route, IPv4Datagram *datagram, IPv4ControlInfo *ctrl);
-        virtual IPv4Datagram *encapsulate(cPacket *transportPacket, IPv4ControlInfo *controlInfo);
+        virtual void forwardMulticastPacket(IPv4Datagram *datagram, InterfaceEntry *fromIE);
         virtual void routeUnicastPacket(IPv4Datagram *datagram, InterfaceEntry *destIE, IPv4Address destNextHopAddr);
         virtual void handleMessageFromHL(cPacket *msg);
-        virtual void reassembleAndDeliver(IPv4Datagram *datagram);
-        virtual InterfaceEntry *determineOutgoingInterfaceForMulticastDatagram(IPv4Datagram *datagram, InterfaceEntry *multicastIFOption);
 
         virtual void fragmentAndSend(IPv4Datagram *datagram, InterfaceEntry *ie, IPv4Address nextHopAddr, int vforwarder);
         virtual void sendDatagramToOutput(IPv4Datagram *datagram, InterfaceEntry *ie, IPv4Address nextHopAddr, int vforwarderId);
         int getVirtualForwarderId(InterfaceEntry *ie, MACAddress addr);
+
     public:
         AnsaIPv4() {}
-
-    protected:
-      virtual int numInitStages() const  {return 5;}
-      virtual void initialize(int stage);
 };
 
 

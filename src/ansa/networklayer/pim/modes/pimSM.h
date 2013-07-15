@@ -116,7 +116,7 @@ class pimSM : public cSimpleModule, protected INotifiable
         PIMppt* createPrunePendingTimer(IPv4Address group, IPv4Address JPaddr, IPv4Address upstreamNbr, JPMsgType JPtype);
 
         // pim messages
-        void sendPIMRegister(IPv4ControlInfo *ctrl);
+        void sendPIMRegister(IPv4Datagram *datagram);
         void sendPIMRegisterStop(IPv4Address source, IPv4Address dest, IPv4Address multGroup, IPv4Address multSource);
         void sendPIMRegisterNull(IPv4Address multSource, IPv4Address multDest);
         void sendPIMJoinPrune(IPv4Address multGroup, IPv4Address joinPruneIPaddr, IPv4Address upstreamNbr, joinPruneMsg JoinPrune, JPMsgType JPtype);
@@ -132,6 +132,8 @@ class pimSM : public cSimpleModule, protected INotifiable
         void processJoinPrunePacket(PIMJoinPrune *pkt);
         void processSGJoin(PIMJoinPrune *pkt,IPv4Address multOrigin, IPv4Address multGroup);
         void processJoinRouteGexistOnRP(IPv4Address multGroup, IPv4Address packetOrigin, int msgHoldtime);
+
+        PimInterface *getIncomingInterface(IPv4Datagram *datagram);
 
     public:
         //PIM-SM clear implementation

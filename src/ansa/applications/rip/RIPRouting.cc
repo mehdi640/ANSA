@@ -345,6 +345,7 @@ UDPSocket *RIPRouting::createAndSetSocketForInt(RIP::Interface* interface)
 {
     UDPSocket *socket = new UDPSocket();
     socket->setOutputGate(gate("udpOut"));
+    socket->setReuseAddress(true);
     //so every RIP message sent from RIP interface uses correct source address
     socket->bind(ift->getInterfaceById(interface->getId())->ipv4Data()->getIPAddress(), RIPPort);
 
@@ -1074,6 +1075,7 @@ void RIPRouting::initialize(int stage)
         ift->getInterface(i)->setMulticast(true);
 
     globalSocket.setOutputGate(gate("udpOut"));
+    globalSocket.setReuseAddress(true);
     globalSocket.bind(RIPPort);
     globalSocket.joinMulticastGroup(RIPAddress, -1);
 
@@ -1280,7 +1282,6 @@ void RIPRouting::receiveChangeNotification(int category, const cObject *details)
    if (category == NF_IPv4_ROUTE_CHANGED)
    {
        IPv4Route *changedRoute = check_and_cast<IPv4Route *>(details);
-       ANSAIPv4Route *changedRouteANSA = dynamic_cast<ANSAIPv4Route *>(changedRoute);
        RIP::RoutingTableEntry *changedRouteRIPng = dynamic_cast<RIP::RoutingTableEntry *>(changedRoute);
 
        if (changedRouteRIPng != NULL)
@@ -1288,11 +1289,7 @@ void RIPRouting::receiveChangeNotification(int category, const cObject *details)
            return;
        }
 
-       unsigned int adminDist;
-       if (changedRouteANSA != NULL)
-           adminDist = changedRouteANSA->getAdminDist();
-       else
-           adminDist = ANSAIPv4Route::dUnknown;
+       unsigned int adminDist = changedRoute->getAdminDist();
 
        if (adminDist >= distance)
        {

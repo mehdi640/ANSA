@@ -87,6 +87,7 @@ UDP::SockDesc::SockDesc(int sockId_, int appGateIndex_) {
     sockId = sockId_;
     appGateIndex = appGateIndex_;
     onlyLocalPortIsSet = false; // for now
+    reuseAddr = false;
     localPort = -1;
     remotePort = -1;
     isBroadcast = false;
@@ -195,16 +196,18 @@ void UDP::processCommandFromApp(cMessage *msg)
                 setMulticastOutputInterface(sd, ((UDPSetMulticastInterfaceCommand*)ctrl)->getInterfaceId());
             else if (dynamic_cast<UDPSetMulticastLoopCommand*>(ctrl))
                 setMulticastLoop(sd, ((UDPSetMulticastLoopCommand*)ctrl)->getLoop());
+            else if (dynamic_cast<UDPSetReuseAddressCommand*>(ctrl))
+                setReuseAddress(sd, ((UDPSetReuseAddressCommand*)ctrl)->getReuseAddress());
             else if (dynamic_cast<UDPJoinMulticastGroupsCommand*>(ctrl))
             {
-            //    UDPJoinMulticastGroupsCommand *cmd = (UDPJoinMulticastGroupsCommand*)ctrl;
-            //    std::vector<IPvXAddress> addresses;
-            //    std::vector<int> interfaceIds;
-            //    for (int i = 0; i < (int)cmd->getMulticastAddrArraySize(); i++)
-            //        addresses.push_back(cmd->getMulticastAddr(i));
-            //    for (int i = 0; i < (int)cmd->getInterfaceIdArraySize(); i++)
-            //        interfaceIds.push_back(cmd->getInterfaceId(i));
-                //joinMulticastGroups(sd, addresses, interfaceIds);
+                UDPJoinMulticastGroupsCommand *cmd = (UDPJoinMulticastGroupsCommand*)ctrl;
+                std::vector<IPvXAddress> addresses;
+                std::vector<int> interfaceIds;
+                for (int i = 0; i < (int)cmd->getMulticastAddrArraySize(); i++)
+                    addresses.push_back(cmd->getMulticastAddr(i));
+                for (int i = 0; i < (int)cmd->getInterfaceIdArraySize(); i++)
+                    interfaceIds.push_back(cmd->getInterfaceId(i));
+                joinMulticastGroups(sd, addresses, interfaceIds);
             }
             else if (dynamic_cast<UDPLeaveMulticastGroupsCommand*>(ctrl))
             {
@@ -398,7 +401,7 @@ void UDP::processICMPError(cPacket *pk)
        << remoteAddr << ":" << remotePort << "\n";
 
     // identify socket and report error to it
-    SockDesc *sd = findSocketByLocalAddress(localAddr, localPort);
+    SockDesc *sd = findSocketForUnicastPacket(localAddr, localPort, remoteAddr, remotePort);
     if (!sd)
     {
         EV << "No socket on that local port, ignoring ICMP error\n";
@@ -466,15 +469,17 @@ void UDP::bind(int sockId, int gateIndex, const IPvXAddress& localAddr, int loca
     if (localPort<-1 || localPort>65535) // -1: ephemeral port
         error("bind: invalid local port number %d", localPort);
 
-    // do not allow two apps to bind to the same address/port combination
-    SockDesc *existing = findSocketByLocalAddress(localAddr, localPort);
-    if (existing != NULL)
+    SocketsByIdMap::iterator it = socketsByIdMap.find(sockId);
+    SockDesc *sd = it != socketsByIdMap.end() ? it->second : NULL;
+
+    // to allow two sockets to bind to the same address/port combination
+    // both of them must have reuseAddr flag set
+    SockDesc *existing = findFirstSocketByLocalAddress(localAddr, localPort);
+    if (existing != NULL && (!sd || !sd->reuseAddr || !existing->reuseAddr))
         error("bind: local address/port %s:%u already taken", localAddr.str().c_str(), localPort);
 
-    SocketsByIdMap::iterator it = socketsByIdMap.find(sockId);
-    if (it != socketsByIdMap.end())
+    if (sd)
     {
-        SockDesc *sd = it->second;
         if (sd->isBound)
             error("bind: socket is already bound (sockId=%d)", sockId);
 
@@ -489,7 +494,7 @@ void UDP::bind(int sockId, int gateIndex, const IPvXAddress& localAddr, int loca
     }
     else
     {
-        SockDesc *sd = createSocket(sockId, gateIndex, localAddr, localPort);
+        sd = createSocket(sockId, gateIndex, localAddr, localPort);
         sd->isBound = true;
     }
 }
@@ -570,7 +575,7 @@ ushort UDP::getEphemeralPort()
     return lastEphemeralPort;
 }
 
-UDP::SockDesc *UDP::findSocketByLocalAddress(const IPvXAddress& localAddr, ushort localPort)
+UDP::SockDesc *UDP::findFirstSocketByLocalAddress(const IPvXAddress& localAddr, ushort localPort)
 {
     SocketsByPortMap::iterator it = socketsByPortMap.find(localPort);
     if (it == socketsByPortMap.end())
@@ -592,18 +597,24 @@ UDP::SockDesc *UDP::findSocketForUnicastPacket(const IPvXAddress& localAddr, ush
     if (it == socketsByPortMap.end())
         return NULL;
 
+    // select the socket bound to ANY_ADDR only if there is no socket bound to localAddr
     SockDescList& list = it->second;
-    for (SockDescList::iterator it = list.begin(); it != list.end(); ++it)
+    SockDesc *socketBoundToAnyAddress = NULL;
+    for (SockDescList::reverse_iterator it = list.rbegin(); it != list.rend(); ++it)
     {
         SockDesc *sd = *it;
         if (sd->onlyLocalPortIsSet || (
                 (sd->remotePort == -1 || sd->remotePort == remotePort) &&
                 (sd->localAddr.isUnspecified() || sd->localAddr == localAddr) &&
-                (sd->remoteAddr.isUnspecified() || sd->remoteAddr == remoteAddr)
-        ))
-            return sd;
+                (sd->remoteAddr.isUnspecified() || sd->remoteAddr == remoteAddr) ))
+        {
+            if (sd->localAddr.isUnspecified())
+                socketBoundToAnyAddress = sd;
+            else
+                return sd;
+        }
     }
-    return NULL;
+    return socketBoundToAnyAddress;
 }
 
 std::vector<UDP::SockDesc*> UDP::findSocketsForMcastBcastPacket(const IPvXAddress& localAddr, ushort localPort, const IPvXAddress& remoteAddr, ushort remotePort, bool isMulticast, bool isBroadcast)
@@ -780,47 +791,52 @@ void UDP::setMulticastLoop(SockDesc *sd, bool loop)
     sd->multicastLoop = loop;
 }
 
-//void UDP::joinMulticastGroups(SockDesc *sd, const std::vector<IPvXAddress>& multicastAddresses, const std::vector<int> interfaceIds)
-//{
-//    int multicastAddressesLen = multicastAddresses.size();
-//    int interfaceIdsLen = interfaceIds.size();
-//    for (int k = 0; k < multicastAddressesLen; k++)
-//    {
-//        const IPvXAddress &multicastAddr = multicastAddresses[k];
-//        int interfaceId = k < interfaceIdsLen ? interfaceIds[k] : -1;
-//        ASSERT(multicastAddr.isMulticast());
-//        sd->multicastAddrs[multicastAddr] = interfaceId;
-//
-//        // add the multicast address to the selected interface or all interfaces
-//        IInterfaceTable *ift = InterfaceTableAccess().get(this);
-//        if (interfaceId != -1)
-//        {
-//            InterfaceEntry *ie = ift->getInterfaceById(interfaceId);
-//            if (!ie)
-//                error("Interface id=%d does not exist", interfaceId);
-//            addMulticastAddressToInterface(ie, multicastAddr);
-//        }
-//        else
-//        {
-//            int n = ift->getNumInterfaces();
-//            for (int i = 0; i < n; i++)
-//                addMulticastAddressToInterface(ift->getInterface(i), multicastAddr);
-//        }
-//    }
-//}
+void UDP::setReuseAddress(SockDesc *sd, bool reuseAddr)
+{
+    sd->reuseAddr = reuseAddr;
+}
+
+void UDP::joinMulticastGroups(SockDesc *sd, const std::vector<IPvXAddress>& multicastAddresses, const std::vector<int> interfaceIds)
+{
+    int multicastAddressesLen = multicastAddresses.size();
+    int interfaceIdsLen = interfaceIds.size();
+    for (int k = 0; k < multicastAddressesLen; k++)
+    {
+        const IPvXAddress &multicastAddr = multicastAddresses[k];
+        int interfaceId = k < interfaceIdsLen ? interfaceIds[k] : -1;
+        ASSERT(multicastAddr.isMulticast());
+        sd->multicastAddrs[multicastAddr] = interfaceId;
+
+        // add the multicast address to the selected interface or all interfaces
+        IInterfaceTable *ift = InterfaceTableAccess().get(this);
+        if (interfaceId != -1)
+        {
+            InterfaceEntry *ie = ift->getInterfaceById(interfaceId);
+            if (!ie)
+                error("Interface id=%d does not exist", interfaceId);
+            addMulticastAddressToInterface(ie, multicastAddr);
+        }
+        else
+        {
+            int n = ift->getNumInterfaces();
+            for (int i = 0; i < n; i++)
+                addMulticastAddressToInterface(ift->getInterface(i), multicastAddr);
+        }
+    }
+}
 
 void UDP::addMulticastAddressToInterface(InterfaceEntry *ie, const IPvXAddress& multicastAddr)
 {
     if (!multicastAddr.isIPv6())
     {
 #ifdef WITH_IPv4
-        //ie->ipv4Data()->joinMulticastGroup(multicastAddr.get4());
+        ie->ipv4Data()->joinMulticastGroup(multicastAddr.get4());
 #endif
     }
     else
     {
 #ifdef WITH_IPv6
-        //ie->ipv6Data()->assignAddress(multicastAddr.get6(), false, SimTime::getMaxTime(), SimTime::getMaxTime());
+        ie->ipv6Data()->assignAddress(multicastAddr.get6(), false, SimTime::getMaxTime(), SimTime::getMaxTime());
 #endif
     }
 }

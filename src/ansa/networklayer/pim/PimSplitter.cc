@@ -22,6 +22,7 @@
  *  it send Hello messages and it manages table of PIM interfaces.
  */
 
+#include "IPv4Datagram.h"
 #include "PimSplitter.h"
 
 using namespace std;
@@ -298,6 +299,13 @@ void PimSplitter::initialize(int stage)
 		else
 			EV << "PIM is enabled on device " << hostname << endl;
 
+		// to receive PIM messages, join to ALL_PIM_ROUTERS multicast group
+		for (int i = 0; i < pimIft->getNumInterface(); i++)
+		{
+		    PimInterface *pimInterface = pimIft->getInterface(i);
+		    pimInterface->getInterfacePtr()->ipv4Data()->joinMulticastGroup(IPv4Address("224.0.0.13")); // TODO use constant
+		}
+
 		// send Hello packets to PIM neighbors (224.0.0.13)
 		PIMTimer *timer = new PIMTimer("Hello");
 		timer->setTimerKind(HelloTimer);
@@ -335,9 +343,9 @@ void PimSplitter::receiveChangeNotification(int category, const cPolymorphic *de
 		// new multicast data appears in router
 		case NF_IPv4_NEW_MULTICAST:
 			EV <<  "PimSplitter::receiveChangeNotification - NEW MULTICAST" << endl;
-			IPv4ControlInfo *ctrl;
-			ctrl = (IPv4ControlInfo *)(details);
-			newMulticast(ctrl->getDestAddr(), ctrl->getSrcAddr());
+			IPv4Datagram *datagram;
+			datagram = check_and_cast<IPv4Datagram*>(details);
+			newMulticast(datagram->getDestAddress(), datagram->getSrcAddress());
 			break;
 
 		// configuration of interface changed, it means some change from IGMP
@@ -472,6 +480,7 @@ void PimSplitter::newMulticast(IPv4Address destAddr, IPv4Address srcAddr)
 	    AnsaIPv4MulticastRoute *newRoute = new AnsaIPv4MulticastRoute();
 		newRoute->setMulticastGroup(destAddr);
 		newRoute->setOrigin(srcAddr);
+		newRoute->setOriginNetmask(IPv4Address::ALLONES_ADDRESS);
 
 		if (pimInt->getMode() == Dense)
 		{
