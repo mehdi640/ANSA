@@ -1,6 +1,4 @@
 //
-// Copyright (C) 2013 Brno University of Technology
-//
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Lesser General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
@@ -14,23 +12,20 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with this program.  If not, see http://www.gnu.org/licenses/.
 // 
-//@author Marek Cerny, Vladimir Vesely
 
-package inet.ansa.networklayer.ipSplitter;
+#ifndef __INET_LISPMAPCACHE_H_
+#define __INET_LISPMAPCACHE_H_
 
-simple IpSplitter
+#include <omnetpp.h>
+
+/**
+ * TODO - Generated class
+ */
+class LISPMapCache : public cSimpleModule
 {
-    parameters:
-        @display("i=block/routing");
+  protected:
+    virtual void initialize();
+    virtual void handleMessage(cMessage *msg);
+};
 
-    gates:
-        input ifIn[];
-        output ifOut[];
-        input ipv4In[];
-        output ipv4Out[];
-        input ipv6In[];
-        output ipv6Out[];
-        input isisIn[];
-        output isisOut[];
-        input lispIn;
-}
+#endif

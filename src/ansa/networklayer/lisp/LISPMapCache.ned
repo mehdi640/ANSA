@@ -14,23 +14,14 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with this program.  If not, see http://www.gnu.org/licenses/.
 // 
-//@author Marek Cerny, Vladimir Vesely
+//@author Vladimir Vesely (<a href="mailto:ivesely@fit.vutbr.cz">ivesely@fit.vutbr.cz</a>)
 
-package inet.ansa.networklayer.ipSplitter;
+package inet.ansa.networklayer.lisp;
 
-simple IpSplitter
+//
+// TODO auto-generated module
+//
+simple LISPMapCache
 {
-    parameters:
-        @display("i=block/routing");
-
-    gates:
-        input ifIn[];
-        output ifOut[];
-        input ipv4In[];
-        output ipv4Out[];
-        input ipv6In[];
-        output ipv6Out[];
-        input isisIn[];
-        output isisOut[];
-        input lispIn;
+    @display("i=block/table2");
 }

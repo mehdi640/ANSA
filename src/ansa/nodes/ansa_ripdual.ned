@@ -14,6 +14,7 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with this program.  If not, see http://www.gnu.org/licenses/.
 // 
+//@author Vladimir Vesely (<a href="mailto:ivesely@fit.vutbr.cz">ivesely@fit.vutbr.cz</a>)
 
 package inet.ansa.nodes;
 
@@ -63,7 +64,7 @@ module ANSA_RouterRIPDual
 
     gates:
 
-        input radioIn[numRadios] @directIn;
+        input radioIn[numRadios] @directIn @labels(AirFrame);
         inout pppg[] @labels(PPPFrame-conn);
         inout ethg[] @labels(EtherFrame-conn);
 
@@ -144,14 +145,14 @@ module ANSA_RouterRIPDual
             parameters:
                 @display("p=323,425");
             gates:
-                ifIn[sizeof(ethg)];
-                ifOut[sizeof(ethg)];
-                ipv4In[sizeof(ethg)];
-                ipv4Out[sizeof(ethg)];
-                ipv6In[sizeof(ethg)];
-                ipv6Out[sizeof(ethg)];
-                isisIn[sizeof(ethg)];
-                isisOut[sizeof(ethg)];
+                ifIn[sizeof(ethg)+sizeof(pppg)+sizeof(radioIn)];
+                ifOut[sizeof(ethg)+sizeof(pppg)+sizeof(radioIn)];
+                ipv4In[sizeof(ethg)+sizeof(pppg)+sizeof(radioIn)];
+                ipv4Out[sizeof(ethg)+sizeof(pppg)+sizeof(radioIn)];
+                ipv6In[sizeof(ethg)+sizeof(pppg)+sizeof(radioIn)];
+                ipv6Out[sizeof(ethg)+sizeof(pppg)+sizeof(radioIn)];
+                isisIn[sizeof(ethg)+sizeof(pppg)+sizeof(radioIn)];
+                isisOut[sizeof(ethg)+sizeof(pppg)+sizeof(radioIn)];
         }
 
         // linklayer
@@ -204,10 +205,13 @@ module ANSA_RouterRIPDual
 
         networkLayer.udpOut --> UDP.ipIn;
         UDP.ipOut --> networkLayer.udpIn;
+
         UDP.ipv6Out --> networkLayer6.udpIn;
         networkLayer6.udpOut --> UDP.ipv6In;
+
         RIP.udpOut --> UDP.appIn++;
         UDP.appOut++ --> RIP.udpIn;
+
         UDP.appOut++ --> RIPng.udpIn;
         RIPng.udpOut --> UDP.appIn++;
 }

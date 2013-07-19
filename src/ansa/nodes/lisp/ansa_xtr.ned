@@ -14,12 +14,14 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with this program.  If not, see http://www.gnu.org/licenses/.
 // 
+//@author Vladimir Vesely (<a href="mailto:ivesely@fit.vutbr.cz">ivesely@fit.vutbr.cz</a>)
 
 package inet.ansa.nodes.lisp;
 
 import inet.ansa.applications.rip.RIPRouting;
 import inet.ansa.applications.ripng.RIPngRouting;
 import inet.ansa.networklayer.ipSplitter.IpSplitter;
+import inet.ansa.networklayer.lisp.LISPRouting;
 import inet.ansa.util.InterfaceStateManager.InterfaceStateManager;
 import inet.transport.IUDP;
 import inet.util.PcapRecorder;
@@ -32,8 +34,17 @@ import inet.linklayer.IExternalNic;
 import inet.base.NotificationBoard;
 import inet.nodes.inet.NetworkLayer;
 import inet.nodes.ipv6.NetworkLayer6;
+import inet.ansa.nodes.ANSA_RouterRIPDual;
 
-
-module ANSA_xTR
+module ANSA_xTR extends ANSA_RouterRIPDual
 {
+    @display("i2=status/busy;bgb=626,569");
+    submodules:
+        LISP: LISPRouting {
+            @display("p=500,318");
+        }
+    connections:
+        UDP.appOut++ --> LISP.udpIn;
+        UDP.appIn++ <-- LISP.udpOut;
+        ipSplitter.lispIn <-- LISP.ipsplitOut;
 }
