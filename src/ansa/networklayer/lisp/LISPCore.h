@@ -44,6 +44,8 @@ class LISPCore : public cSimpleModule, protected INotifiable
 
     virtual void initialize();
     virtual void handleMessage(cMessage *msg);
+    virtual void receiveChangeNotification(int category, const cObject *details);
+    virtual void updateDisplayString();
 };
 
 #endif

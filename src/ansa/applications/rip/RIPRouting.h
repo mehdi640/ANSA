@@ -378,7 +378,7 @@ class RIPRouting : public cSimpleModule, protected INotifiable
     void deleteRoute(RIPTimer *timer);
 
   protected:
-    virtual int numInitStages() const {return 4;}
+    virtual int  numInitStages() const {return 4;}
     virtual void initialize(int stage);
     virtual void handleMessage(cMessage *msg);
     virtual void receiveChangeNotification(int category, const cObject *details);

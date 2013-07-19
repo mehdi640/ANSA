@@ -32,12 +32,26 @@ void LISPCore::initialize()
     // read the RIP process configuration
     devConf = ModuleAccess<DeviceConfigurator>("deviceConfigurator").get();
     //devConf->loadLISPConfig(this);
-    socket.setOutputGate(gate("udpOut"));
-    socket.bind(4341);
-    setSocketOptions();
+    //socket.setOutputGate(gate("udpOut"));
+    //socket.bind(4341);
+    //setSocketOptions();
 }
 
 void LISPCore::handleMessage(cMessage *msg)
 {
-    // TODO - Generated method body
+
 }
+
+void LISPCore::updateDisplayString()
+{
+    if (ev.isGUI())
+    {
+        //TODO
+    }
+}
+
+void LISPCore::receiveChangeNotification(int category, const cObject *details)
+{
+    //TODO
+}
+

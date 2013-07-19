@@ -15,95 +15,133 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with this program.  If not, see http://www.gnu.org/licenses/.
 // 
+//@author Vladimir Vesely (<a href="mailto:ivesely@fit.vutbr.cz">ivesely@fit.vutbr.cz</a>)
 
 cplusplus {{
-#include "INETDefs.h"
-#include "IPAddress.h"
+    #include "INETDefs.h"
+    #include "IPvXAddress.h"       
+    // ---------- Locators ---------- 
+    typedef struct _locators
+    {       
+        unsigned char priority;				// unicast priority
+        unsigned char weight;				// unicast weight
+        unsigned char Mpriority;			// multicast priority
+        unsigned char Mweight;				// multicast weight
+        bool LocalLocBit;					// local locator Bit
+        bool piggybackBit;					// piggyback Bit
+        bool RouteRlocBit;					// route RLOC Bit
+        unsigned short locAFI;				// locator AFI
+        IPvXAddress locator;     			// locator
+    } Locators;
+    
+    // ---------- Map-Request Recs ----------
+    typedef struct _requestrecs
+    {
+        unsigned short eidLen;				// EID length
+        unsigned short eidPrefixAFI;		// eid-prefix AFIs     
+        IPvXAddress eidPrefix; 				// eid-prefix    
+    } RequestRecs;
+    
+    // ---------- Map-Reply Recs ----------
+    typedef struct _replyrecs
+    {
+        unsigned short mapVersion;			// EID length
+        unsigned short eidPrefixAFI;		// eid-prefix AFIs     
+        IPvXAddress eidPrefix; 				// eid-prefix 
+           
+        Locators locators[];      			//<-- see struct above    
+    } ReplyRecs;
+    
+    
+    // ---------- Map-Reply/Register Records ----------
+    typedef struct _records
+    {
+        simtime_t recordTTL;				// TTL
+        unsigned char locatorCount;   		// locator count
+        unsigned char eidMaskLen;			// EID mask
+        unsigned char ACT;					// Action flags
+        bool ABit; 							// Authoritative Bit
+        ReplyRecs recs;             		//<-- see struct above
+    } Records;
+}}
+//struct records;
+//struct locators;
+class noncobject IPvXAddress;
+class noncobject Records;
+class noncobject ReplyRecs;
+class noncobject RequestRecs;
 
-struct recordsPtr;
-struct locator;
-
-class noncobject IPAddress;
+enum LISP_MsgType
+{
+    REQUEST  = 1;
+    REPLY    = 2;
+    REGISTER = 3;
+    NOTIFY	 = 4;
+}
 
 packet LISPHeader {
-    string displayString = "b=15,15,oval,blue,black,2"; // for demo purposes only
-    bool Nbit; 											// nonce-present bit
-    bool Lbit; 											// locator-status-bits field enabled
-    bool Ebit; 											// echo-nonce-request bit
-    bool Vbit; 											// map-version persent bit
-    bool Ibit; 											// instance id bit
-    char flags;
-    unsigned int nonce; 								// nonce
-    unsigned int mapVersion; 							// map-version
-    unsigned int instanceId; 							// instanceId
-    unsigned int locatorStatusBits; 					// locator-status-bits field
+    string displayString = "b=15,15,oval,blue,black,2"; 
+    bool NonceBit; 						// nonce-present Bit
+    bool LocStatBit; 					// locator-status-Bits field enabled
+    bool EchoNonceBit; 					// echo-nonce-request Bit
+    bool VerMapBit; 					// map-version persent Bit
+    bool InstanceBit; 					// instance id Bit
+    char flags;							// currently unused flags
+    unsigned int nonce; 				// nonce
+    unsigned int mapVersion; 			// map-version
+    unsigned int instanceId; 			// instanceId
+    unsigned int locatorStatusBits; 	// locator-status-Bits field
 }
 
 packet LISPMessage {
     string displayString;
-    char type				//message type
-    bool pbit; 				// probe bit
-    unsigned int nonce; 	// nonce
-}
-
-packet LISPMapReply extends LISPMessage {
-    string displayString = "b=15,15,oval,green,black,2";
-    IPAddress eidPrefix[]; // eid-prefix
-    unsigned int eidPrefixLength[]; // eid-prefix length
-    unsigned int mapVersion[]; // map-version
-    bool abit[]; // authoritative bit
-    recordsPtr records[]; // list of locators
-    bool locatorTypeBit[];
-    simtime_t recordTTL; //TTL
-    // Missing:
-    // Detailed record information
-    // Mapping Protocol Data
-    // Echo-Nonce locator reachability algorithm
-    // Multiple EIDs in one reply
+    unsigned char type enum(LISP_MsgType);	// message type    
+    unsigned char recordCount;			// number of records
+    unsigned long nonce; 				// nonce
 }
 
 packet LISPMapRequest extends LISPMessage {
     string displayString = "b=15,15,oval,red,black,2";
-    type = 0;
-    bool Abit;						// Authoritative bit 
-    bool Mbit;						// Map-data-present bit
-    bool Pbit;						// Probe bit
-    bool Sbit;						// Solicit-Map-Request bit
-    bool pbit;						// PITR bit
-    bool sbit;						// SMR-invoked bit
-    unsigned char itrRlocCount;		// number of itrRlocs
-    unsigned char recordCount;		// number of records    
-    IPAddress itrRlocs[]; 			// addresses of itr used to send map-reply to
-    unsigned int eidPrefixLength[]; // list of eid-prefix lengths
-    unsigned char eidPrefixAFI[];	// list of eid-prefix AFIs 
-    IPAddress eidPrefix[]; 			// list of eid-prefixes
+    type = REQUEST;    
+    bool ABit;							// Authoritative Bit 
+    bool MapDataBit;					// Map-data-present Bit
+    bool ProbeBit; 						// probe/proxy Bit
+    bool SmrBit;						// Solicit-Map-Request Bit
+    bool pITRBit;						// PITR Bit
+    bool smrInvokedBit;					// SMR-invoked Bit
     
-    LISPMapReply mapReply; //Map-Reply Record
+    unsigned char itrRlocCount;			// number of itrRlocs       
+    
+	unsigned short itrAFI[];			// list of eid-prefix AFIs         
+    IPvXAddress itrRlocs[]; 			// addresses of itr used to send map-reply to
+    
+    RequestRecs recs[];					// <-- see structure above 
+    
+    Records mapReply; 					//Map-Reply with own info
+}
+
+packet LISPMapReply extends LISPMessage {
+    string displayString = "b=15,15,oval,green,black,2";
+	type = REPLY;    
+    bool EchoNonceBit;					// Echo-Nonce Bit
+    bool SecBit;						// Security Bit       
+    
+    Records records[];    				// <-- see structure above 
 }
 
 packet LISPMapRegister extends LISPMessage {
     string displayString = "b=15,15,oval,yellow,black,2";
-    IPAddress eidPrefix[]; // list of eid-prefixes
-    unsigned int eidPrefixLength[]; // list of eid-prefix lengths
-    unsigned int mapVersion[]; // map-version
-    recordsPtr records[]; // list of list of locators
-    bool locatorTypeBit[];
-    bool Mbit; // map-notify
-    bool Pbit; //piggy_advanced
-    bool Nbit; //NTR mechanism
-    simtime_t recordTTL; //TTL
-    // Missing:
-    // Security
+ 	type = REGISTER; 	
+ 	bool MapNotifyBit; 					// map-notify
+ 	 	
+ 	unsigned short keyId;				// HMAC key id
+ 	unsigned short authDataLen;			// length of authentization data
+ 	char authData[];					// authentization data
+ 	
+ 	Records records[];					// <-- see structure above      
 }
 
-packet LISPMapNotify extends LISPMessage {
+packet LISPMapNotify extends LISPMapRegister {
     string displayString = "b=15,15,oval,orange,black,2";
-    IPAddress eidPrefix[]; // list of eid-prefixes
-    unsigned int eidPrefixLength[]; // list of eid-prefix lengths
-    unsigned int mapVersion[]; // map-version
-    recordsPtr records[]; // list of list of locators
-    bool locatorTypeBit[];
-    bool Mbit; // map-notify
-    // Missing:
-    // Security
+    type = NOTIFY;
 }
